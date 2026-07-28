@@ -1,0 +1,45 @@
+name: tests
+
+# Fast, CPU-only checks: install the package, make sure `import airllm` works on a clean install,
+# and run the offline unit tests. Nothing here needs a GPU or network access, so it should never be
+# flaky: the GPU test skips itself when CUDA is absent, and the Hugging Face test only runs when
+# AIRLLM_TEST_NETWORK is set.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install CPU-only torch
+        # The default torch wheel pulls a large CUDA stack we don't need on a CPU runner.
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install airllm
+        run: pip install ./air_llm
+
+      - name: Smoke test - import on a clean install
+        # Guards the class of regression fixed in 6436dce / 9478b3f, where `import airllm` broke
+        # on a fresh install. Run outside the repo so the installed package is what's imported.
+        run: cd /tmp && python -c "import airllm; print('airllm imported OK')"
+
+      - name: Run offline unit tests
+        working-directory: air_llm
+        run: |
+          pip install pytest
+          python -m pytest -v
